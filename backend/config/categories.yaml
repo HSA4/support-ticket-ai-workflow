@@ -1,0 +1,24 @@
+categories:
+  - id: technical
+    name: Technical Support
+    keywords: [error, bug, crash, not working, failed, broken]
+
+  - id: billing
+    name: Billing & Payments
+    keywords: [charge, refund, invoice, payment, subscription, overcharged]
+
+  - id: account
+    name: Account Management
+    keywords: [login, password, account, access, locked, credentials]
+
+  - id: feature_request
+    name: Feature Request
+    keywords: [wish, request, feature, enhancement, suggest, idea]
+
+  - id: bug_report
+    name: Bug Report
+    keywords: [bug, defect, broken, incorrect, unexpected behavior]
+
+  - id: general
+    name: General Inquiry
+    keywords: [question, help, how to, information]

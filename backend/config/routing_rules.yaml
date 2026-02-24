@@ -1,0 +1,29 @@
+teams:
+  - name: technical_support
+    categories: [technical, bug_report]
+    priority_modifier: 0
+
+  - name: billing_team
+    categories: [billing]
+    priority_modifier: 0
+
+  - name: account_management
+    categories: [account]
+    priority_modifier: 0
+
+  - name: product_team
+    categories: [feature_request]
+    priority_modifier: 1
+
+  - name: escalation_team
+    severities: [critical]
+    priority_modifier: -1
+
+routing_strategy:
+  default: category_severity
+  fallback: general_support
+
+escalation_paths:
+  technical_support: [senior_technical, engineering_team]
+  billing_team: [billing_manager, finance_team]
+  account_management: [account_manager, security_team]

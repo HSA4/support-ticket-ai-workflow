@@ -1,0 +1,2 @@
+We receive support tickets with inconsistent quality and duplication. Build an AI workflow that:
+classifies the ticket (category + severity), extracts required fields, proposes a response draft, routes to the right team.

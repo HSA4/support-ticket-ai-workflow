@@ -1,0 +1,26 @@
+severities:
+  - id: critical
+    name: Critical
+    description: System down, data loss, security breach, revenue impact
+    priority: 1
+    response_time_sla: 1h
+    indicators: [urgent, asap, critical, down, emergency, production]
+
+  - id: high
+    name: High
+    description: Major feature broken, multiple users affected
+    priority: 2
+    response_time_sla: 4h
+    indicators: [important, serious, affecting]
+
+  - id: medium
+    name: Medium
+    description: Feature partially working, workaround exists
+    priority: 3
+    response_time_sla: 24h
+
+  - id: low
+    name: Low
+    description: Minor issue, cosmetic, general inquiry
+    priority: 4
+    response_time_sla: 72h
