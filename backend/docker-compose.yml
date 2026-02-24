@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: ticket_workflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-ticketuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ticketpass}
+      POSTGRES_DB: ${DB_NAME:-ticket_workflow}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ticketuser} -d ${DB_NAME:-ticket_workflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ticket_network
+
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket_workflow_app
+    restart: unless-stopped
+    environment:
+      # LLM Provider Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
+      # OpenRouter Configuration
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-http://localhost:8000}
+      - OPENROUTER_APP_NAME=${OPENROUTER_APP_NAME:-Support Ticket AI Workflow}
+      # OpenAI Configuration (fallback)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Model Configuration
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-anthropic/claude-3.5-sonnet}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-openai/gpt-4o-mini}
+      - MAX_TOKENS=${MAX_TOKENS:-4096}
+      - TEMPERATURE=${TEMPERATURE:-0.3}
+      # Database Configuration
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-ticketuser}:${DB_PASSWORD:-ticketpass}@db:5432/${DB_NAME:-ticket_workflow}
+      # Application Configuration
+      - APP_NAME=${APP_NAME:-Support Ticket AI Workflow}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Workflow Configuration
+      - WORKFLOW_TIMEOUT_SECONDS=${WORKFLOW_TIMEOUT_SECONDS:-30}
+      # Feature Flags
+      - ENABLE_AI_CLASSIFICATION=${ENABLE_AI_CLASSIFICATION:-true}
+      - ENABLE_AI_EXTRACTION=${ENABLE_AI_EXTRACTION:-true}
+      - ENABLE_RESPONSE_GENERATION=${ENABLE_RESPONSE_GENERATION:-true}
+      # AI Configuration
+      - AI_CONFIDENCE_THRESHOLD=${AI_CONFIDENCE_THRESHOLD:-0.6}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ticket_network
+    volumes:
+      - ./config:/app/config:ro
+
+  # Redis (optional - for caching and job queues)
+  redis:
+    image: redis:7-alpine
+    container_name: ticket_workflow_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ticket_network
+    profiles:
+      - cache
+
+networks:
+  ticket_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
