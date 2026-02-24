@@ -6,7 +6,7 @@ environment variable parsing and validation.
 """
 
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,8 +23,12 @@ class Settings(BaseSettings):
 
         DATABASE_URL: PostgreSQL connection URL with asyncpg driver
 
-        OPENAI_API_KEY: OpenAI API key for LLM calls
-        DEFAULT_MODEL: Default OpenAI model to use
+        LLM_PROVIDER: LLM provider to use ('openrouter' or 'openai')
+        OPENROUTER_API_KEY: OpenRouter API key
+        OPENROUTER_BASE_URL: OpenRouter API base URL
+        OPENAI_API_KEY: OpenAI API key (fallback)
+
+        DEFAULT_MODEL: Default model to use (OpenRouter format: provider/model)
         MAX_TOKENS: Maximum tokens for LLM responses
 
         WORKFLOW_TIMEOUT_SECONDS: Timeout for workflow execution
@@ -54,20 +58,56 @@ class Settings(BaseSettings):
         description="PostgreSQL connection URL with asyncpg driver",
     )
 
-    # OpenAI Configuration
+    # LLM Provider Configuration
+    LLM_PROVIDER: Literal["openrouter", "openai"] = Field(
+        default="openrouter",
+        description="LLM provider to use: 'openrouter' or 'openai'",
+    )
+
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY: str = Field(
+        default="",
+        description="OpenRouter API key",
+    )
+    OPENROUTER_BASE_URL: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter API base URL",
+    )
+    OPENROUTER_SITE_URL: str = Field(
+        default="http://localhost:8000",
+        description="Site URL for OpenRouter rankings",
+    )
+    OPENROUTER_APP_NAME: str = Field(
+        default="Support Ticket AI Workflow",
+        description="App name for OpenRouter rankings",
+    )
+
+    # OpenAI Configuration (fallback)
     OPENAI_API_KEY: str = Field(
         default="",
-        description="OpenAI API key for LLM calls",
+        description="OpenAI API key (fallback if not using OpenRouter)",
     )
+
+    # Model Configuration
     DEFAULT_MODEL: str = Field(
-        default="gpt-4-turbo-preview",
-        description="Default OpenAI model to use",
+        default="anthropic/claude-3.5-sonnet",
+        description="Default model to use (OpenRouter format: provider/model)",
+    )
+    FALLBACK_MODEL: str = Field(
+        default="openai/gpt-4o-mini",
+        description="Fallback model if primary fails",
     )
     MAX_TOKENS: int = Field(
         default=4096,
         description="Maximum tokens for LLM responses",
         ge=1,
         le=128000,
+    )
+    TEMPERATURE: float = Field(
+        default=0.3,
+        description="Temperature for LLM responses",
+        ge=0.0,
+        le=2.0,
     )
 
     # Workflow Configuration

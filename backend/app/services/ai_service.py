@@ -1,9 +1,11 @@
 """
-AI Service for OpenAI integration.
+AI Service for LLM integration via OpenRouter.
 
 This module provides the AIService class that handles all LLM-based operations
 for the support ticket workflow, including classification, extraction, response
 generation, and routing decisions.
+
+Supports both OpenRouter and OpenAI as LLM providers.
 """
 
 import asyncio
@@ -68,28 +70,52 @@ class AIParseError(AIServiceError):
 
 class AIService:
     """
-    AI Service for handling OpenAI API interactions.
+    AI Service for handling LLM API interactions via OpenRouter or OpenAI.
 
     This service provides methods for classification, field extraction,
-    response generation, and routing decisions using the OpenAI API.
+    response generation, and routing decisions using LLM APIs.
 
     Attributes:
         client: AsyncOpenAI client instance
         model: Default model to use for completions
         max_tokens: Maximum tokens for responses
+        provider: Current LLM provider ('openrouter' or 'openai')
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        provider: Optional[str] = None,
+    ):
         """
         Initialize the AI service.
 
         Args:
-            api_key: OpenAI API key (defaults to settings.OPENAI_API_KEY)
+            api_key: API key (defaults to OPENROUTER_API_KEY or OPENAI_API_KEY based on provider)
+            provider: LLM provider to use ('openrouter' or 'openai', defaults to settings.LLM_PROVIDER)
         """
-        self.api_key = api_key or settings.OPENAI_API_KEY
-        self.client = AsyncOpenAI(api_key=self.api_key)
+        self.provider = provider or settings.LLM_PROVIDER
+
+        if self.provider == "openrouter":
+            self.api_key = api_key or settings.OPENROUTER_API_KEY
+            self.base_url = settings.OPENROUTER_BASE_URL
+            self._extra_headers = {
+                "HTTP-Referer": settings.OPENROUTER_SITE_URL,
+                "X-Title": settings.OPENROUTER_APP_NAME,
+            }
+        else:
+            # Fallback to OpenAI
+            self.api_key = api_key or settings.OPENAI_API_KEY
+            self.base_url = None  # Use default OpenAI URL
+            self._extra_headers = {}
+
+        self.client = AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
         self.model = settings.DEFAULT_MODEL
         self.max_tokens = settings.MAX_TOKENS
+        self.temperature = settings.TEMPERATURE
         self._token_usage: Dict[str, int] = {"prompt": 0, "completion": 0, "total": 0}
 
     @retry(
@@ -99,19 +125,21 @@ class AIService:
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
-    async def _call_openai(
+    async def _call_llm(
         self,
         messages: List[Dict[str, str]],
         response_format: Optional[Dict[str, str]] = None,
-        temperature: float = 0.3,
+        temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Make a call to the OpenAI API with retry logic and exponential backoff.
+        Make a call to the LLM API with retry logic and exponential backoff.
+
+        Supports both OpenRouter and OpenAI APIs.
 
         Args:
             messages: List of message dictionaries for the chat completion
             response_format: Optional response format specification
-            temperature: Sampling temperature (0.0-2.0)
+            temperature: Sampling temperature (0.0-2.0), defaults to settings
 
         Returns:
             Parsed JSON response from the API
@@ -123,11 +151,17 @@ class AIService:
             kwargs = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": temperature,
+                "temperature": temperature if temperature is not None else self.temperature,
                 "max_tokens": self.max_tokens,
             }
 
-            if response_format:
+            # Add extra headers for OpenRouter
+            if self._extra_headers:
+                kwargs["extra_headers"] = self._extra_headers
+
+            # Note: response_format may not be supported by all OpenRouter models
+            # Only add if specified and provider supports it
+            if response_format and self.provider == "openai":
                 kwargs["response_format"] = response_format
 
             response = await self.client.chat.completions.create(**kwargs)
@@ -141,29 +175,29 @@ class AIService:
             # Parse the response content
             content = response.choices[0].message.content
             if not content:
-                raise AIServiceError("Empty response from OpenAI")
+                raise AIServiceError(f"Empty response from {self.provider}")
 
             # Try to parse as JSON
             try:
                 return self._parse_json_response(content)
             except AIParseError as e:
-                logger.warning(f"Failed to parse OpenAI response as JSON: {e}")
+                logger.warning(f"Failed to parse {self.provider} response as JSON: {e}")
                 raise AIServiceError(f"Invalid JSON response: {content[:200]}")
 
         except RateLimitError as e:
-            logger.warning(f"OpenAI rate limit hit: {e}")
+            logger.warning(f"{self.provider} rate limit hit: {e}")
             raise
         except APITimeoutError as e:
-            logger.warning(f"OpenAI API timeout: {e}")
+            logger.warning(f"{self.provider} API timeout: {e}")
             raise
         except APIConnectionError as e:
-            logger.warning(f"OpenAI connection error: {e}")
+            logger.warning(f"{self.provider} connection error: {e}")
             raise
         except APIError as e:
-            logger.error(f"OpenAI API error: {e}")
-            raise AIServiceError(f"OpenAI API error: {e}")
+            logger.error(f"{self.provider} API error: {e}")
+            raise AIServiceError(f"{self.provider} API error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error calling OpenAI: {e}")
+            logger.error(f"Unexpected error calling {self.provider}: {e}")
             raise AIServiceError(f"Unexpected error: {e}")
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
@@ -245,9 +279,8 @@ class AIService:
                 {"role": "user", "content": prompt},
             ]
 
-            data = await self._call_openai(
+            data = await self._call_llm(
                 messages=messages,
-                response_format={"type": "json_object"},
                 temperature=0.2,
             )
 
@@ -401,9 +434,8 @@ class AIService:
                 {"role": "user", "content": prompt},
             ]
 
-            data = await self._call_openai(
+            data = await self._call_llm(
                 messages=messages,
-                response_format={"type": "json_object"},
                 temperature=0.1,
             )
 
@@ -608,9 +640,8 @@ class AIService:
                 {"role": "user", "content": prompt},
             ]
 
-            data = await self._call_openai(
+            data = await self._call_llm(
                 messages=messages,
-                response_format={"type": "json_object"},
                 temperature=0.7,
             )
 
@@ -821,9 +852,8 @@ class AIService:
                 {"role": "user", "content": prompt},
             ]
 
-            data = await self._call_openai(
+            data = await self._call_llm(
                 messages=messages,
-                response_format={"type": "json_object"},
                 temperature=0.2,
             )
 
@@ -958,13 +988,17 @@ class AIService:
         """
         try:
             # Make a minimal API call to check connectivity
+            kwargs = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 5,
+            }
+            if self._extra_headers:
+                kwargs["extra_headers"] = self._extra_headers
+
             response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": "ping"}],
-                    max_tokens=5,
-                ),
-                timeout=5.0,
+                self.client.chat.completions.create(**kwargs),
+                timeout=10.0,
             )
             return bool(response.choices)
         except Exception as e:
@@ -972,6 +1006,6 @@ class AIService:
             return False
 
     async def close(self) -> None:
-        """Close the OpenAI client connection."""
+        """Close the client connection."""
         # AsyncOpenAI client doesn't require explicit close
         pass
